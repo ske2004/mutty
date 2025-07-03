@@ -51,9 +51,9 @@ fn (win: ^Window) setstyle(s: int) {
       } else if s>=40 &&s<=47 {
         win.bgc=s-40+1
       } else if s>=90 &&s<=97 {
-        win.fgc=s-90+9
+        win.fgc=s-90+10
       } else if s>=100 &&s<=107 {
-        win.bgc=s-100+9
+        win.bgc=s-100+10
       }
   }
 }

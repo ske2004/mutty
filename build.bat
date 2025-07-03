@@ -1,1 +1,1 @@
-cl /LD ipty.c /Feipty.umi
+cl /LD ipty.c /Feipty.umi /O3

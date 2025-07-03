@@ -44,7 +44,7 @@ fn init*() {
 	window::setup("muTTY", round(w*glyphsize.x), round(h*glyphsize.y))
 
 	window::onFrame.register(|vt, glyphsize, font, pty| {
-		buf := make([]uint8, 1024)
+		buf := make([]uint8, 4096)
 		n := pty.read(buf)
 		if n != -1 {
 			vt.feed(slice(buf, 0, n))
