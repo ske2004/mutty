@@ -1,0 +1,26 @@
+type (
+  Ipty = struct {_: ^struct{}}
+)
+
+fn umkaIptyNew(ipty: ^Ipty, w, h: int)
+fn umkaIptyResize(i: Ipty, w, h: int)
+fn umkaIptyRead(i: Ipty, b: ^[]uint8): int 
+fn umkaIptyWrite(i: Ipty, b: ^[]uint8): int 
+
+fn mk*(w, h: int): Ipty {
+  var ipty: Ipty
+  umkaIptyNew(&ipty, w, h)
+  return ipty
+}
+
+fn (it: ^Ipty) resize*(w, h: int) {
+  umkaIptyResize(it^, w, h)
+}
+
+fn (it: ^Ipty) read*(b: []uint8): int {
+  return umkaIptyRead(it^, &b)
+}
+
+fn (it: ^Ipty) write*(b: []uint8): int {
+  return umkaIptyWrite(it^, &b)
+}

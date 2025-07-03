@@ -1,0 +1,18 @@
+{
+	"name": "mutty",
+	"version": "v0.1.0",
+	"author": "unknown",
+	"license": "BSD-3",
+	"description": "My Tophat based box",
+	"readme": "README.md",
+	"dependencies": [
+		"tophat",
+		"umka_api"
+	],
+	"include": [
+	],
+	"run": {
+		"posix": "./umbox/tophat/tophat",
+		"windows": "./umbox/tophat/tophat.exe -dpiaware"
+	}
+}

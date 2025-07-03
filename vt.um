@@ -1,0 +1,280 @@
+import ("window.um")
+
+type Cursor = struct{
+  x, y: int
+}
+
+type Cell = struct{
+  rune: int32
+  fgc: uint16
+  bgc: uint16
+}
+
+type Window = struct{
+  fgc: uint16
+  bgc: uint16
+
+  showcursor: bool
+  c: Cursor
+  w, h: int
+  cells: []Cell
+}
+
+fn mkWindow*(w, h: int): Window {
+  return { showcursor: true, w: w, h: h, cells: make([]Cell, w*h) }
+}
+
+fn (win: ^Window) poke(c: Cursor, r: int32) {
+  if c.x>=0 && c.x<win.w && c.y>=0 && c.y<win.h {
+    win.cells[c.y*win.w+c.x] = {r, win.fgc, win.bgc}
+  }
+}
+
+fn (win: ^Window) cls() {
+  win.cells = make([]Cell, win.w*win.h)
+  win.c = {}
+}
+
+fn (win: ^Window) put(r: int32) {
+  win.poke(win.c, r)
+  win.c.x += 1
+}
+
+fn (win: ^Window) setstyle(s: int) {
+  switch s {
+    case 0: win.fgc = 0; win.bgc = 0;
+    case 39: win.fgc = 0;
+    case 49: win.bgc = 0;
+    default:
+      if s>=30 &&s<=37 {
+        win.fgc=s-30+1
+      } else if s>=40 &&s<=47 {
+        win.bgc=s-40+1
+      } else if s>=90 &&s<=97 {
+        win.fgc=s-90+9
+      } else if s>=100 &&s<=107 {
+        win.bgc=s-100+9
+      }
+  }
+}
+
+fn (win: ^Window) moveTo(c: Cursor) {
+  win.c.x = c.x;
+  win.c.y = c.y;
+  if win.c.x<0 { win.c.x=0 }
+  if win.c.x>win.w-1 { win.c.x=win.w-1 }
+  if win.c.y<0 { win.c.y=0 }
+  if win.c.y>win.h-1 { win.c.y=win.h-1 }
+}
+
+fn (win: ^Window) move(dx, dy: int) {
+  win.moveTo({win.c.x+dx, win.c.y+dy})
+}
+
+fn (win: ^Window) down() {
+  win.c.y += 1
+  for win.c.y >= win.h {
+    win.cells = slice(win.cells, win.w)
+    win.cells = append(win.cells, make([]Cell, win.w))
+    win.c.y -= 1
+  }
+}
+
+type Parser = struct {
+  buf: []uint8
+  win: Window
+  byte: uint8
+}
+
+type VT* = struct {
+  parser: ^Parser
+  fparser: fiber
+}
+
+fn (p: ^Parser) await(): char {
+  resume()
+  p.buf = append(p.buf, p.byte)
+  return char(p.byte)
+}
+
+fn (p: ^Parser) flush() {
+  for i,c in p.buf {
+    p.win.put(int32(c))
+  }
+  p.buf = {}
+}
+
+fn (p: ^Parser) osc(): bool {
+  byte := p.await()
+  if byte != '0' {
+    return false
+  }
+  byte = p.await()
+  if byte != ';' {
+    return false
+  }
+
+  title := ""
+  for true {
+    byte := p.await()
+    if byte == '\x07' {
+      break
+    }
+    title += byte
+  }
+
+  window::setTitle("muTTY | "+title)
+
+  return true
+}
+
+fn (p: ^Parser) csi(): bool {
+  params := [3]int{0, 0, 0}
+  parami := 0
+  
+  for true {
+    byte := p.await()
+    // printf("%c\n", byte)
+
+    if byte>='0' && byte<='9' {
+      params[parami] *= 10
+      params[parami] += int(byte)-int('0')
+    } else if byte==';' {
+      parami++
+    } else if byte=='?' {
+      /* vendor specific, just ignore */
+    } else if byte=='J' {
+      switch params[0] {
+        case 2: p.win.cls()
+      }
+
+      break
+    } else if byte>='A' && byte<='D' {
+      dirs := [4]Cursor{
+        { 0, -1},
+        { 0,  1},
+        { 1,  0},
+        {-1,  0},
+      }
+
+      if params[0] == 0 {
+        params[0] = 1
+      }
+      dir := dirs[int(byte)-int('A')]
+      dir.x *= params[0]
+      dir.y *= params[0]
+      p.win.moveTo({p.win.c.x+dir.x, p.win.c.y+dir.y})
+
+      switch params[0] {
+        case 2: p.win.cls()
+      }
+
+      break
+    } else if byte=='K' {
+      switch params[0] {
+        case 0:
+          for i:=p.win.c.x; i<p.win.w; i++ {
+            p.win.poke({i, p.win.c.y}, int32(' '))
+          }
+        case 1:
+          for i:=p.win.c.x; i>=0; i-- {
+            p.win.poke({i, p.win.c.y}, int32(' '))
+          }
+        case 2:
+          for i:=0; i<=p.win.w; i++ {
+            p.win.poke({i, p.win.c.y}, int32(' '))
+          }
+      }
+
+      break
+    } else if byte=='H' {
+      if params[0] == 0 {
+        params[0] = 1
+      }
+      if params[1] == 0 {
+        params[1] = 1
+      }
+      p.win.moveTo({params[1]-1, params[0]-1})
+      break
+    } else if byte=='m' {
+      for i:=0; i<=parami; i++ {
+        p.win.setstyle(params[i])
+      }
+      break
+    } else if byte=='X' {
+      if params[0] == 0 {
+        params[0] = 1
+      }
+      for i:=0; i<params[0]; i++ {
+        c := p.win.c
+        c.x += i
+        p.win.poke(c, int32(' '))
+      }
+      break
+    } else if byte=='l' {
+      if params[0] == 25 { p.win.showcursor = false }
+      break
+    } else if byte=='h' {
+      if params[0] == 25 { p.win.showcursor = true }
+      break
+    } else {
+      return false
+    }
+  }
+
+  return true
+}
+
+fn (p: ^Parser) handler() {
+  for true {
+    for true {
+      p.buf={}
+      byte := p.await()
+      if byte == '\x1b' {
+        kind := p.await()
+        if kind == '[' { if !p.csi() { break } 
+        } else if kind == ']' { if !p.osc() { break } 
+        } else { break }
+      } else if byte == '\n' {
+        p.win.down()
+      } else if byte == '\t' {
+        p.win.c.x = ceil((p.win.c.x+1)/8.0)*8
+      } else if byte == '\r' {
+        p.win.c.x = 0
+      } else if byte == '\b' {
+        if p.win.c.x == 0 { p.win.c.x = p.win.w - 1
+        } else { p.win.c.x-- }
+
+        p.win.poke(p.win.c, int32(' '))
+      } else {
+        p.win.put(int32(byte))
+      } 
+    }
+    printf("failed parsing: %v\n", str(slice(p.buf, 1)))
+    p.flush()
+  }
+}
+
+fn mk*(w, h: int): VT {
+  parser := new(Parser)
+  parser.win = mkWindow(w, h)
+  vt := VT{
+    parser: parser,
+    fparser: make(fiber, |parser| {
+      parser.handler()
+    })
+  }
+  resume(vt.fparser)
+  return vt
+}
+
+fn (vt: ^VT) feed*(bytes: []uint8) {
+  for i,b in bytes {
+    vt.parser.byte = b
+    resume(vt.fparser)
+  }
+}
+
+fn (vt: ^VT) win*(): ^Window {
+  return &vt.parser.win
+}

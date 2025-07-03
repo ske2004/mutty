@@ -1,0 +1,6 @@
+umbox/
+*.umi
+*.exp
+*.obj
+*.pdb
+*.lib

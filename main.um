@@ -1,0 +1,108 @@
+import (
+	"canvas.um"
+	"th.um"
+	"window.um"
+	"ipty.um"
+	"font.um"
+	"std.um"
+	"utf8.um"
+	"vt.um"
+	"input.um"
+)
+
+colors := [18]uint32{
+	0xFFFFFFFF, /* default */
+	0x000000FF, /* black */
+	0x770000FF, /* red */
+	0x007700FF, /* green */
+	0x777700FF, /* yellow */
+	0x000077FF, /* blue */
+	0x777700FF, /* magenta */
+	0x007777FF, /* cyan */
+	0x777777FF, /* white */
+	0xFFFFFFFF, /* default */
+	0x000000FF, /* black */
+	0xFF0000FF, /* red */
+	0x00FF00FF, /* green */
+	0xFFFF00FF, /* yellow */
+	0x0000FFFF, /* blue */
+	0xFFFF00FF, /* magenta */
+	0x00FFFFFF, /* cyan */
+	0xFFFFFFFF, /* white */
+}
+
+const (w=80;h=25)
+
+fn init*() {
+
+	pty := ipty::mk(w, h)
+	font, err := font::load("FairfaxHD.ttf", window::getDpiScaleFactor()*18)
+	glyphsize := font.measure("m")
+	std::exitif(err)
+	vt := new(vt::VT, vt::mk(w, h))
+
+	window::setup("muTTY", round(w*glyphsize.x), round(h*glyphsize.y))
+
+	window::onFrame.register(|vt, glyphsize, font, pty| {
+		buf := make([]uint8, 1024)
+		n := pty.read(buf)
+		if n != -1 {
+			vt.feed(slice(buf, 0, n))
+		}
+
+		text := input::getStr()
+		wbuf := []uint8{}
+		for i, c in text {
+			if input::isPressed(.ctrl) {
+				wbuf = append(wbuf, []uint8("\x1b[4"+c))
+			} else {
+				wbuf = append(wbuf, uint8(c))
+			}
+		}
+		if input::isPressedRepeat(.enter) {
+			wbuf = append(wbuf, uint8('\r'))
+		}
+		if input::isPressedRepeat(.backspace) {
+			wbuf = append(wbuf, uint8('\b'))
+		}
+		if input::isPressedRepeat(.tab) {
+			wbuf = append(wbuf, uint8('\t'))
+		}
+		if input::isPressedRepeat(.up) {
+			wbuf = append(wbuf, []uint8("\x1b[A"))
+		}
+		if input::isPressedRepeat(.down) {
+			wbuf = append(wbuf, []uint8("\x1b[B"))
+		}
+		if input::isPressedRepeat(.right) {
+			wbuf = append(wbuf, []uint8("\x1b[C"))
+		}
+		if input::isPressedRepeat(.left) {
+			wbuf = append(wbuf, []uint8("\x1b[D"))
+		}
+		if input::isPressedRepeat(.escape) {
+			wbuf = append(wbuf, []uint8("\x1b"))
+		}
+		pty.write(wbuf)
+
+		canvas::drawRect(0x000000FF, {0, 0, window::wp.x, window::wp.y})
+		win := vt.win()
+		for i:=0; i<win.h; i++ {
+			for j:=0; j<win.w; j++ {
+				cell := win.cells[i*win.w+j]
+				rune := cell.rune
+				pos := th::Vf2{j*glyphsize.x, i*glyphsize.y}
+				if cell.bgc != 0 {
+					canvas::drawRect(colors[cell.bgc], {pos.x, pos.y, glyphsize.x, glyphsize.y})
+				}
+				if rune != 0 {
+					font.draw(utf8::encode({rune}), pos, colors[cell.fgc], 1)
+				}
+				if win.showcursor && i==win.c.y && j==win.c.x {
+					canvas::drawRect(0x99FFFFFF, {pos.x, pos.y, glyphsize.x, glyphsize.y})
+					font.draw(utf8::encode({rune}), pos, 0x000000FF, 1)
+				}
+			}
+		}
+	})
+}
