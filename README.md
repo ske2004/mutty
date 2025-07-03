@@ -1,4 +1,7 @@
-# UmBox + Tophat
+# mutty
 
-You have successfully initialized an UmBox box from the tophat template.
-For more information about tophat, visit [tophat2d.dev](https://tophat2d.dev).
+mostly to showcase fiber parsing, on Linux it works really badly. On Windows you can use Vim pretty well.
+
+Enjoy!
+
+![src](./screen.png)
