@@ -1,0 +1,24 @@
+import (
+  "std.um"
+  "font.um"
+  "th.um"
+)
+
+type (
+  ProfItem = struct {
+    name: str
+    time: real
+  }
+)
+
+profStack := []ProfItem{}
+
+fn profBegin*(name: str) {
+  profStack = append(profStack, {name, std::clock()})
+}
+
+fn profEnd*() {
+  last := profStack[len(profStack)-1]
+  profStack = delete(profStack, len(profStack)-1)
+  printf("%s took: %f\n", last.name, std::clock()-last.time)
+}

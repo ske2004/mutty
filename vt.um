@@ -4,13 +4,13 @@ type Cursor = struct{
   x, y: int
 }
 
-type Cell = struct{
+type Cell* = struct{
   rune: int32
   fgc: uint16
   bgc: uint16
 }
 
-type Window = struct{
+type Window* = struct{
   fgc: uint16
   bgc: uint16
 
@@ -129,7 +129,7 @@ fn (p: ^Parser) osc(): bool {
 }
 
 fn (p: ^Parser) csi(): bool {
-  params := [3]int{0, 0, 0}
+  params := [6]int{0, 0, 0, 0, 0, 0}
   parami := 0
   
   for true {

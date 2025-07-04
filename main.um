@@ -8,6 +8,10 @@ import (
 	"utf8.um"
 	"vt.um"
 	"input.um"
+	"font_cyr.um"
+	"rt.um"
+	"dbg.um"
+	"rect.um"
 )
 
 colors := [18]uint32{
@@ -17,7 +21,7 @@ colors := [18]uint32{
 	0x007700FF, /* green */
 	0x777700FF, /* yellow */
 	0x000077FF, /* blue */
-	0x777700FF, /* magenta */
+	0x770077FF, /* magenta */
 	0x007777FF, /* cyan */
 	0x777777FF, /* white */
 	0xFFFFFFFF, /* default */
@@ -26,28 +30,95 @@ colors := [18]uint32{
 	0x00FF00FF, /* green */
 	0xFFFF00FF, /* yellow */
 	0x0000FFFF, /* blue */
-	0xFFFF00FF, /* magenta */
+	0xFF00FFFF, /* magenta */
 	0x00FFFFFF, /* cyan */
 	0xFFFFFFFF, /* white */
 }
 
-const (w=80;h=25)
+const (w=100;h=80)
 
+type Cell = struct {
+	rune: int32
+	fgc: uint16
+	bgc: uint16
+}
+
+type XY = struct {
+	x, y: int
+}
+
+type WinCache = struct {
+	rt: rt::RenderTarget
+	rt2: rt::RenderTarget
+	scr: []Cell
+	deltas: []struct{p: XY; c: Cell}
+	w: int
+	gx, gy: real
+}
+
+fn mkCache(w, h: int, gx, gy: real): WinCache {
+	target, err := rt::mk({round(w*gx), round(h*gy)}, .nearest)
+	std::exitif(err)
+	target2, err := rt::mk({round(w*gx), round(h*gy)}, .nearest)
+	std::exitif(err)
+
+
+	scr := make([]Cell, w*h)
+	return {target, target2, scr, {}, w, gx, gy}
+}
+
+fn (wc: ^WinCache) set(x, y: int, c: Cell) {
+	p := x+y*wc.w
+	if wc.scr[p] != c {
+		wc.scr[p] = c
+		wc.deltas = append(wc.deltas, {{x,y}, c})
+	}
+}
+
+fn (wc: ^WinCache) flush(f: font::Font) {
+	wc.rt2.begin()
+	wc.rt.toImage().draw({p: {0, 0}, s: {1, 1}})
+	wc.rt2.end()
+
+	wc.rt.begin()
+	wc.rt2.toImage().draw({p: {0, 0}, s: {1, 1}})
+
+	for _,x in wc.deltas {
+	 	p, c := x.p, x.c
+		rect := rect::Rect{p.x*wc.gx, p.y*wc.gy, wc.gx, wc.gy}
+		if c.bgc == 0 {
+			canvas::drawRect(colors[1], rect)
+		} else {
+			canvas::drawRect(colors[c.bgc], rect)
+		}
+		f.draw(utf8::encode({c.rune}), rect.getPos(), colors[c.fgc], 2)
+	}
+
+	wc.deltas = {}
+
+	wc.rt.end()
+}
 fn init*() {
 
 	pty := ipty::mk(w, h)
-	font, err := font::load("FairfaxHD.ttf", window::getDpiScaleFactor()*18)
-	glyphsize := font.measure("m")
+	font, err := font_cyr::mk()
+	glyphsize := font.measure("m").mulf(2)
 	std::exitif(err)
 	vt := new(vt::VT, vt::mk(w, h))
 
 	window::setup("muTTY", round(w*glyphsize.x), round(h*glyphsize.y))
+	wc := new(WinCache, mkCache(w, h, glyphsize.x, glyphsize.y))
 
-	window::onFrame.register(|vt, glyphsize, font, pty| {
-		buf := make([]uint8, 4096)
-		n := pty.read(buf)
-		if n != -1 {
-			vt.feed(slice(buf, 0, n))
+	window::onFrame.register(|wc, vt, glyphsize, font, pty| {
+		for true {
+			buf := make([]uint8, 128)
+			n := pty.read(buf)
+			if n != -1 {
+				vt.feed(slice(buf, 0, n))
+			}
+			if n == 0 {
+				break
+			}
 		}
 
 		text := input::getStr()
@@ -85,24 +156,22 @@ fn init*() {
 		}
 		pty.write(wbuf)
 
-		canvas::drawRect(0x000000FF, {0, 0, window::wp.x, window::wp.y})
 		win := vt.win()
+		dbg::profBegin("draw")
 		for i:=0; i<win.h; i++ {
 			for j:=0; j<win.w; j++ {
 				cell := win.cells[i*win.w+j]
-				rune := cell.rune
-				pos := th::Vf2{j*glyphsize.x, i*glyphsize.y}
-				if cell.bgc != 0 {
-					canvas::drawRect(colors[cell.bgc], {pos.x, pos.y, glyphsize.x, glyphsize.y})
-				}
-				if rune != 0 {
-					font.draw(utf8::encode({rune}), pos, colors[cell.fgc], 1)
-				}
 				if win.showcursor && i==win.c.y && j==win.c.x {
-					canvas::drawRect(0x99FFFFFF, {pos.x, pos.y, glyphsize.x, glyphsize.y})
-					font.draw(utf8::encode({rune}), pos, 0x000000FF, 1)
+					wc.set(j, i, {cell.rune, 1, 2})
+				} else {
+					wc.set(j, i, {cell.rune, cell.fgc, cell.bgc})
 				}
 			}
 		}
+
+		wc.flush(font)
+		canvas::drawRect(0x000000FF, {0, 0, window::wp.x, window::wp.y})
+		wc.rt.toImage().draw({p: {0, 0}, s: {1, 1}})
+		dbg::profEnd()
 	})
 }
